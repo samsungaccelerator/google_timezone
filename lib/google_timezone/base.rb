@@ -1,32 +1,28 @@
 require 'json'
 require 'open-uri'
+require 'timeout'
 
 module GoogleTimezone
 
   class Error < StandardError; end
 
   class Base
-    @allowed_params = [:language, :sensor, :timestamp, :client, :signature, :key]
+    @allowed_params = [:language, :sensor, :timestamp, :client, :signature, :key, :timeout]
 
     def initialize(*args)
-      @lat, @lon = if args.first.is_a? Array
-                     args.first
-                   else
-                     args[0..1]
-                   end
       @options = extract_options!(args)
       @options.reject! { |key, value| !@allowed_params.include? key }
     end
 
-    def fetch
-      location = [@lat, @lon].join(',')
+    def fetch(lat, lon)
+      location = [lat, lon].join(',')
       params = { location: location, sensor: false, timestamp: Time.now.to_i }.merge(@options)
       result = get_result(params)
       Result.new(result)
     end
 
-    def fetch!
-      result = fetch
+    def fetch!(lat, lon)
+      result = fetch(lat, lon)
       raise(GoogleTimezone::Error.new(result.result)) unless result.success?
       result
     end
@@ -47,8 +43,13 @@ module GoogleTimezone
       args.last.is_a?(::Hash) ? pop : {}
     end
 
+    # @raises Timeout::Error
     def get_result(params)
-      open(url(params)) { |r| JSON.parse(r.read) }
+      timeout = @options[:timeout]
+      timeout ||= 10
+      Timeout::timeout(timeout) do
+        open(url(params)) { |r| JSON.parse(r.read) }
+      end
     end
   end
 end
